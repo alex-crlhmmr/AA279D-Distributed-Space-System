@@ -1,40 +1,19 @@
-function [rRTN, vRTN] = ECI2RTN(r_ref, v_ref, r_target, v_target)
-% Inputs:
-%   r_ref   - 3x1 position vector (ECI) for the reference (origin of the RTN frame)
-%   v_ref   - 3x1 velocity vector (ECI) for the reference
-%   r_target- 3x1 position vector (ECI) for the target point
-%   v_target- 3x1 velocity vector (ECI) for the target point
+function [rRTN, vRTN] = ECI2RTN(r_chief_ECI, v_chief_ECI, r_deputy_ECI, v_deputy_ECI)
+r0 = r_chief_ECI;
+v0 = v_chief_ECI;
+r1 = r_deputy_ECI;
+v1 = v_deputy_ECI;
 
-% Outputs:
-%   rRTN    - 3x1 relative position vector of the target in the RTN frame
-%   vRTN    - 3x1 relative velocity vector of the target in the RTN frame
+% ECI TO CHIEF RTN ROTATION MATRIX
+R0_hat = r0 / norm(r0);
+N0 = cross(r0, v0);
+N0_hat = N0 / norm(N0);
+T0 = cross(N0_hat, R0_hat);
+T0_hat = T0 / norm(T0);
+R_ECI2RTN = [R0_hat'; T0_hat'; N0_hat'];
 
-% Ensure the input vectors are columns.
-if isrow(r_ref), r_ref = r_ref'; end
-if isrow(v_ref), v_ref = v_ref'; end
-if isrow(r_target), r_target = r_target'; end
-if isrow(v_target), v_target = v_target'; end
-
-% Compute the relative state differences in the ECI frame.
-delta_r = r_target - r_ref;
-delta_v = v_target - v_ref;
-
-% Construct the RTN basis using the reference state:
-% 1. Radial direction (R_hat): from the central body to the reference position.
-R_hat = r_ref / norm(r_ref);
-
-% 2. Normal direction (N_hat): perpendicular to the orbital plane.
-N = cross(r_ref, v_ref);
-N_hat = N / norm(N);
-
-% 3. Transverse direction (T_hat): completes the right-handed system.
-T_hat = cross(N_hat, R_hat);
-
-% Form the rotation matrix.
-R_matrix = [R_hat, T_hat, N_hat]';  % 3x3 matrix
-
-% Transform the relative vectors from ECI to RTN using the rotation matrix.
-rRTN = R_matrix * delta_r;
-vRTN = R_matrix * delta_v;
+% CALCULATE DEPUTY RTN COORDS
+rRTN = R_ECI2RTN * (r1-r0);
+vRTN = R_ECI2RTN * (v1-v0);
 
 end
