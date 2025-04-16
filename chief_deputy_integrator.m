@@ -1,6 +1,6 @@
 % Initial Keplerian orbital elements [a, e, i, RAAN, omega, nu]
 alpha0 = [6771; 0.0005; deg2rad(51.64); deg2rad(257); 0; deg2rad(30)]; % Chief
-alpha1 = [6771; 0.0006; deg2rad(51.69); deg2rad(257.5); deg2rad(0.5); deg2rad(25)]; % Deputy
+alpha1 = [6751; 0.0006; deg2rad(51.69); deg2rad(257.5); deg2rad(0.5); deg2rad(25)]; % Deputy
 
 % Calculate initial state [ECI position and velocity] of chief
 mu = 398600.4418;

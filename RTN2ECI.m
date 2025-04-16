@@ -10,10 +10,10 @@ N0 = cross(r0, v0);
 N0_hat = N0 / norm(N0);
 T0 = cross(N0_hat, R0_hat);
 T0_hat = T0 / norm(T0);
-R_ECI2RTN = [R0_hat'; T0_hat'; N0_hat']';
+R_RTN2ECI = [R0_hat'; T0_hat'; N0_hat']';
 
 % CALCULATE DEPUTY RTN COORDS
-rECI = R_ECI2RTN * (r1-r0);
-vECI = R_ECI2RTN * (v1-v0);
+rECI = r0 + R_RTN2ECI * r1;
+vECI = v0 + R_RTN2ECI * v1;
 
 end

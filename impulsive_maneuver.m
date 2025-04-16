@@ -1,7 +1,7 @@
 %% INTEGRATE OVER 2 PERIODS AS IN (B) ------------------------------------
 % Initial Keplerian orbital elements [a, e, i, RAAN, omega, nu]
 alpha0 = [6771; 0.0005; deg2rad(51.64); deg2rad(257); 0; deg2rad(30)]; % Chief
-alpha1 = [6771; 0.0006; deg2rad(51.69); deg2rad(257.5); deg2rad(0.5); deg2rad(25)]; % Deputy
+alpha1 = [6751; 0.0006; deg2rad(51.69); deg2rad(257.5); deg2rad(0.5); deg2rad(25)]; % Deputy
 
 % Calculate initial state [ECI position and velocity] of chief
 mu = 398600.4418;
@@ -9,6 +9,7 @@ mu = 398600.4418;
 
 % Calculate initial state [RTN position and velocity] of deputy
 [r1, v1] = kepler_to_ijk(alpha1, mu);
+
 [rRTN, vRTN] = ECI2RTN(r0, v0, r1, v1);
 
 % Initialize state
@@ -21,7 +22,7 @@ state0(10:12) = vRTN;
 % Time span
 orbit_period = 2*pi*sqrt(alpha0(1)^3 / mu);
 t0 = 0;
-t_end =  5 * orbit_period; % Propagate for 2 orbits
+t_end =  2 * orbit_period; % Propagate for 2 orbits
 tspan = t0:0.1:t_end;
 
 % ODE options with precise tolerances
@@ -47,10 +48,6 @@ state0_new = state(end, :);
 state0_new(11) = v_deputy_RTN(2) + dvT_deputy;
 
 %% RECALCULATE NEW ORBIT
-% Time span
-orbit_period = 2*pi*sqrt(alpha0(1)^3 / mu);
-t0 = 0;
-t_end =  5 * orbit_period; % Propagate for 2 orbits
 tspan2 = t_end:0.1:2*t_end;
 
 % ODE options with precise tolerances
@@ -80,7 +77,7 @@ ylabel('T (km)')
 subplot(3,1,3)
 plot(ts/3600, z1)
 ylabel('N (km)')
-xlabel('Time (s)')
+xlabel('Time (hr)')
 
 figure(2)
 subplot(3,1,1)
@@ -93,4 +90,3 @@ subplot(3,1,3)
 plot(ts/3600, vz1)
 ylabel('N (km/s)')
 xlabel('Time (hr)')
-%}
