@@ -6,7 +6,7 @@ alpha1 = [6771; 0.0006; deg2rad(51.69); deg2rad(257.5); deg2rad(0.5); deg2rad(25
 mu = 398600.4418;
 [r0, v0] = kepler_to_ijk(alpha0, mu);
 
-% Calculate initial RTN position and velocity of deputy
+% Calculate initial state [RTN position and velocity] of deputy
 [r1, v1] = kepler_to_ijk(alpha1, mu);
 [rRTN, vRTN] = ECI2RTN(r0, v0, r1, v1);
 
