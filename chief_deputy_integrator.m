@@ -20,11 +20,11 @@ state0(10:12) = vRTN;
 % Time span
 orbit_period = 2*pi*sqrt(alpha0(1)^3 / mu);
 t0 = 0;
-t_end = 1 * orbit_period; % Propagate for 2 orbits
+t_end =  5 * orbit_period; % Propagate for 2 orbits
 tspan = t0:0.1:t_end;
 
 % ODE options with precise tolerances
-options = odeset('RelTol', 1e-20, 'AbsTol', 1e-20);
+options = odeset('RelTol', 1e-12, 'AbsTol', 1e-12);
 
 % PROPOGATE
 [t, state] = ode113(@state_dot, tspan, state0, options);
@@ -38,13 +38,27 @@ vy1 = state(:, 11);
 vz1 = state(:, 12);
 
 figure(1)
-plot(x1, y1)
-xlabel('R (km)')
+subplot(3,1,1)
+plot(t/3600, x1)
+ylabel('R (km)')
+subplot(3,1,2)
+plot(t/3600, y1)
 ylabel('T (km)')
-axis equal
+subplot(3,1,3)
+plot(t/3600, z1)
+ylabel('N (km)')
+xlabel('Time (s)')
+
+
 
 figure(2)
-plot(vx1, vy1)
-xlabel('R (km/s)')
+subplot(3,1,1)
+plot(t/3600, vx1)
+ylabel('R (km/s)')
+subplot(3,1,2)
+plot(t/3600, vy1)
 ylabel('T (km/s)')
-axis equal
+subplot(3,1,3)
+plot(t/3600, vz1)
+ylabel('N (km/s)')
+xlabel('Time (hr)')
