@@ -15,8 +15,8 @@ function statedot = getStatedot(t, state, const, body, perturbated)
     r = p / (1 + e * cos(f));
     u = w + f;
     n = sqrt(mu / a^3);
-    t = sqrt(1-e^2);
-
+    eta = sqrt(1-e^2);
+    
     % Get perturbations
     if nargin < 5 || perturbated
         perturbations = propagators.KeplerianPropagator.getPerturbations(t, state, const, body);
@@ -33,20 +33,20 @@ function statedot = getStatedot(t, state, const, body, perturbated)
     % Gauss' variational equations
 
     % da/dt
-    statedot(1) = ((2*e*sin(f))/(n*t))*f_R + ((2*a*t)/(n*r))*f_T;
+    statedot(1) = ((2*e*sin(f))/(n*eta))*f_R + ((2*a*eta)/(n*r))*f_T;
 
     % de/dt
-    statedot(2) = ((t*sin(f))/(n*a))*f_R + ((t)/(n*a^2*e))*(((a^2*t^2)/(r))-r)*f_T;
+    statedot(2) = ((eta*sin(f))/(n*a))*f_R + ((eta)/(n*a^2*e))*(((a^2*eta^2)/(r))-r)*f_T;
 
     % di/dt
-    statedot(3) = ((r*cos(u))/(n*a^2*t))*f_N;
+    statedot(3) = ((r*cos(u))/(n*a^2*eta))*f_N;
 
     % dOmega/dt
-    statedot(4) = ((r*sin(u))/(n*a^2*t*sin(i)))*f_N;
+    statedot(4) = ((r*sin(u))/(n*a^2*eta*sin(i)))*f_N;
 
     % domega/dt
-    statedot(5) = ((-t*cos(f))/(n*a*e))*f_R + ((t)/(n*a*e))*((2+e*cos(f))/(1+e*cos(f)))*(sin(f))*f_T + ((-r*(1/tan(i))*sin(u))/(n*a^2*t))*f_N;
+    statedot(5) = ((-eta*cos(f))/(n*a*e))*f_R + ((eta)/(n*a*e))*((2+e*cos(f))/(1+e*cos(f)))*(sin(f))*f_T + ((-r*(1/tan(i))*sin(u))/(n*a^2*eta))*f_N;
 
     % df/dt
-    statedot(6) = (sqrt(mu * p) / r^2) + (t / (e * a * n)) * (cos(f) * f_R - (1 + r / p) * sin(f) * f_T);
+    statedot(6) = (sqrt(mu * p) / r^2) + (eta / (e * a * n)) * (cos(f) * f_R - (1 + r / p) * sin(f) * f_T);
 end
