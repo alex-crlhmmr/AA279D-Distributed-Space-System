@@ -1,0 +1,853 @@
+%% - Reset
+
+clc; clear; close all;
+
+%% 1 - a
+
+% Orbited body
+body = 'earth';
+const = utils.getConstants({body});
+mu = const.(body).mu;
+
+% Chief initial orbital elements
+a_0 = 6771000 ;         % semi-major axis [m]
+e_0 = 0.1005;           % eccentricity [-]
+i_0 = deg2rad(51.64);   % inclination [rad]
+W_0 = deg2rad(257);     % RAAN [rad]
+w_0 = deg2rad(0);       % argument of perigee [rad]
+f_0 = deg2rad(30);      % true anomaly [rad]
+
+% Chief initial state in OE & ECI
+initial_state_0_OE = [a_0, e_0, i_0, W_0, w_0, f_0];
+initial_state_0_ECI = utils.OE2ECI(initial_state_0_OE, const, body);
+r0_init = initial_state_0_ECI(1:3);
+v0_init = initial_state_0_ECI(4:6);
+
+% Deputy initial orbital elements (ISS)
+a_1 = a_0;                  % semi-major axis [m]
+e_1 = e_0+0.0001;           % eccentricity [-]
+i_1 = i_0+deg2rad(0.05);    % inclination [rad]
+W_1 = W_0+deg2rad(0.05);    % RAAN [rad]
+w_1 = w_0+deg2rad(0.05);    % argument of perigee [rad]
+f_1 = f_0 - deg2rad(0.05);  % true anomaly [rad]
+
+% Deputy initial state in OE & ECI
+initial_state_1_OE = [a_1, e_1, i_1, W_1, w_1, f_1];
+initial_state_1_ECI = utils.OE2ECI(initial_state_1_OE, const, body);
+r1_init = initial_state_1_ECI(1:3);
+v1_init = initial_state_1_ECI(4:6);
+
+
+% Compute relative separation and its fraction of the chief’s radius
+rho  = norm(r1_init - r0_init);      
+frac = rho / norm(r0_init);           
+
+% Display results
+fprintf('Relative separation ρ = %.2f m (%.4f × r₀)\n', rho, frac);
+fprintf('Semi-major axis: a_0 = %.4f, a_1 = %.4f\n', a_0, a_1);
+
+% Assertions to ensure Tschauner-Hempel validity range:
+%   - separation < 0.05% of chief radius
+%   - both semi-major axis equal
+assert(frac < 0.005, 'ERROR: ρ/r₀ ≥ 0.5 %');
+assert(a_0 == a_1, 'ERROR: semi-major axis not equal');
+
+disp('→ Initial conditions satisfy Tschauner-Hempel validity range.');
+
+
+%% 1 - b
+
+function C = YAconstants(a_0, f_0, r0, v0, r1, v1, mu )
+
+% Constants
+r0n = norm(r0);                       
+h = cross(r0,v0);  hN = norm(h);      
+p   = hN^2 / mu;                      
+evec = (cross(v0,h)/mu) - r0/r0n;     
+e     = norm(evec);
+k     = 1 + e*cos(f_0);               
+c     = k*cos(f_0);         
+s     = k*sin(f_0);
+eta   = sqrt(1-e^2);                 
+rdot  = dot(r0,v0)/r0n;               
+fdot  = hN / r0n^2;                   
+
+% RTN frame at the epoch (ECI→RTN rotation)
+R_hat = r0/r0n;
+N_hat = h / hN;
+T_hat = cross(N_hat,R_hat);
+Q = [R_hat.'; T_hat.'; N_hat.'];   
+
+% Relative position & *coordinate* velocity in RTN
+rho = Q * (r1 - r0);              
+v_rel = v1 - v0;
+
+% Frame angular-velocity Ω_RTN  (Ω_R,Ω_T,Ω_N)
+Omega_RTN = [ 0 ; 0 ; fdot ];
+
+rho_dot_RTN = Q*v_rel - cross(Omega_RTN, rho);
+
+% Normalised state  [x̄, x̄′, ȳ, ȳ′, z̄, z̄′]^T
+xbar  =  rho(1) / a_0;
+ybar  =  rho(2) / a_0;
+zbar  =  rho(3) / a_0;
+
+xbar_p = rho_dot_RTN(1)/(a_0*fdot);
+ybar_p = rho_dot_RTN(2)/(a_0*fdot);
+zbar_p = rho_dot_RTN(3)/(a_0*fdot);
+
+X = [xbar; xbar_p; ybar; ybar_p; zbar; zbar_p];
+
+% Inverse matrix
+phiInv = (1/eta^2) * [ ...
+   -3*s*(k+e^2)/k^2     ,          c - 2*e  ,       0  , -s*(k+1)/k              ,          0 ,          0 ; ...
+ -3*(e + c/k)           ,            -s     ,       0  , -(c*(k+1)/k + e)        ,          0 ,          0 ; ...
+   3*k - eta^2          ,          e*s      ,       0  ,              k^2        ,          0 ,          0 ; ...
+     -3*e*s*(k+1)/k^2   ,         -2+e*c    ,    eta^2 ,            -e*s*(k+1)/k ,          0 ,          0 ; ...
+        0               ,              0    ,       0  ,               0         ,    eta^2*cos(f_0) , -eta^2*sin(f_0) ; ...
+        0               ,              0    ,       0  ,               0         ,    eta^2*sin(f_0) ,  eta^2*cos(f_0) ];
+
+% Integration constants
+C = phiInv * X;
+end
+
+
+
+mu  = const.(body).mu;        % already in workspace
+CYA = YAconstants(a_0, f_0, r0_init,v0_init,r1_init,v1_init,mu)
+
+
+%% 1 - c
+
+
+
+function I = computeI(e, f0, f)
+    % Computes the integral I = ∫ 1 / (k(f)^2) df where k(f) = 1 + e*cos(f)
+    % e  : eccentricity
+    % f0 : initial true anomaly (lower bound)
+    % f  : final true anomaly (upper bound)
+
+    k = @(f) 1 + e * cos(f);
+    integrand = @(f) 1 ./ (k(f).^2);
+    
+    I = integral(integrand, f0, f);
+end
+
+function [t_vec, x, y, z, x_dot, y_dot, z_dot] = propagateYA(a_0, e_0, f_0, CYA, num_orbits)
+    % Constants
+    eta = sqrt(1 - e_0^2);
+    
+    % Define true anomaly range over multiple orbits
+    f_vec = linspace(f_0, f_0 + num_orbits * 2 * pi, 1000);
+    n_points = length(f_vec);
+    
+    % Initialize storage
+    state = zeros(6, n_points);  % [x̄; x̄′; ȳ; ȳ′; z̄; z̄′]
+    
+    for idx = 1:n_points
+        f = f_vec(idx);
+        kf = 1 + e_0 * cos(f);
+        cf = kf * cos(f);
+        sf = kf * sin(f);
+        
+        % Derivatives c' and s'
+        cp = -sin(f) * (1 + 2 * e_0 * cos(f));
+        sp = cos(f) * (1 + 2 * e_0 * cos(f)) - e_0;
+        
+        % Compute I integral at this f
+        Ival = computeI(e_0, f_0, f);
+        
+        % Build phi matrix (correct YA STM)
+        phi = kf * [ ...
+            sf,         cf,             2 - 3 * e_0 * sf * Ival,      0, 0, 0;
+            sp,         cp,           -3 * e_0 * (sp * Ival + sf / kf^2), 0, 0, 0;
+            cf*(1 + 1/kf),   -sf*(1+1/kf),        -3 * kf^2 * Ival,               1, 0, 0;
+            -2 * sf,    e_0 - 2 * cf, -3 * (1 - 2 * e_0 * sf * Ival), 0, 0, 0;
+            0,          0,              0,                           0, cos(f), sin(f);
+            0,          0,              0,                           0, -sin(f), cos(f)];
+        
+        % Propagate the state
+        state(:, idx) = phi * CYA;
+    end
+    
+    % Extract positions and velocities
+    x = state(1, :) * a_0;
+    y = state(3, :) * a_0;
+    z = state(5, :) * a_0;
+    
+    x_dot = state(2, :) * a_0*0.0014;
+    y_dot = state(4, :) * a_0*0.0014;
+    z_dot = state(6, :) * a_0*0.0014;
+
+    % % Plotting
+    % figure; 
+    % plot3(x, y, z, 'b', 'LineWidth', 1.5);
+    % xlabel('R [m]'); ylabel('T [m]'); zlabel('N [m]');
+    % title('YA Relative Trajectory (3D View)');
+    % grid on; axis equal;
+    % 
+    % figure;
+    % subplot(1,3,1);
+    % plot(x, y, 'b');
+    % xlabel('R [m]'); ylabel('T [m]');
+    % title('RT Plane'); grid on; axis equal;
+    % 
+    % subplot(1,3,2);
+    % plot(y, z, 'r');
+    % xlabel('T [m]'); ylabel('N [m]');
+    % title('TN Plane'); grid on; axis equal;
+    % 
+    % subplot(1,3,3);
+    % plot(z, x, 'g');
+    % xlabel('N [m]'); ylabel('R [m]');
+    % title('NR Plane'); grid on; axis equal;
+    mu =  3.9860e+14;
+
+    % Time vector approximation (assuming mean motion n = sqrt(mu/a^3))
+    n = sqrt(mu / a_0^3);
+    % Use true anomaly as independent variable, so dt = df / f_dot = df / (n * (1 + e cos f)^2 / eta^3)
+    % For simplicity here, assume constant n and uniform sampling → approximate time vector:
+    t_vec = (f_vec - f_vec(1)) / n;  % seconds
+
+    % % 3D Trajectory Plot
+    % figure; 
+    % plot3(x, y, z, 'b', 'LineWidth', 1.5);
+    % xlabel('R [m]'); ylabel('T [m]'); zlabel('N [m]');
+    % title('YA Relative Trajectory (3D View)');
+    % grid on; axis equal;
+    % 
+    % % RT, TN, NR Projections
+    % figure;
+    % subplot(1,3,1);
+    % plot(x, y, 'b');
+    % xlabel('R [m]'); ylabel('T [m]');
+    % title('RT Plane'); grid on; axis equal;
+    % 
+    % subplot(1,3,2);
+    % plot(y, z, 'r');
+    % xlabel('T [m]'); ylabel('N [m]');
+    % title('TN Plane'); grid on; axis equal;
+    % 
+    % subplot(1,3,3);
+    % plot(z, x, 'g');
+    % xlabel('N [m]'); ylabel('R [m]');
+    % title('NR Plane'); grid on; axis equal;
+    % 
+    % % Position and Velocity vs Time (RTN)
+    % figure;
+    % subplot(3,2,1); plot(t_vec, x, 'b'); xlabel('Time [s]'); ylabel('x [m]'); title('R Component');
+    % grid on;
+    % subplot(3,2,3); plot(t_vec, y, 'r'); xlabel('Time [s]'); ylabel('y [m]'); title('T Component');
+    % grid on;
+    % subplot(3,2,5); plot(t_vec, z, 'g'); xlabel('Time [s]'); ylabel('z [m]'); title('N Component');
+    % grid on;
+    % 
+    % subplot(3,2,2); plot(t_vec, x_dot, 'b'); xlabel('Time [s]'); ylabel('ẋ [m/s]'); title('R Velocity');
+    % grid on;
+    % subplot(3,2,4); plot(t_vec, y_dot, 'r'); xlabel('Time [s]'); ylabel('ẏ [m/s]'); title('T Velocity');
+    % grid on;
+    % subplot(3,2,6); plot(t_vec, z_dot, 'g'); xlabel('Time [s]'); ylabel('ż [m/s]'); title('N Velocity');
+    % grid on;
+
+
+    % --- Position Projections and 3D Plot ---
+    figure('Name','YA Position Projections + 3D','Color','w','Units','normalized','Position',[.1 .1 .8 .6]);
+    
+    % T–R Plane
+    subplot(2,2,1);
+    plot(y, x, 'LineWidth', 1.2);
+    xlabel('T (m)'); ylabel('R (m)');
+    axis equal; grid on;
+    
+    % N–R Plane
+    subplot(2,2,2);
+    plot(z, x, 'LineWidth', 1.2);
+    xlabel('N (m)'); ylabel('R (m)');
+    axis equal; grid on;
+    
+    % T–N Plane
+    subplot(2,2,3);
+    plot(y, z, 'LineWidth', 1.2);
+    xlabel('T (m)'); ylabel('N (m)');
+    axis equal; grid on;
+    
+    % 3D Position Plot
+    subplot(2,2,4);
+    plot3(x, y, z, 'LineWidth', 1.2);
+    xlabel('R (m)'); ylabel('T (m)'); zlabel('N (m)');
+    axis equal; grid on;
+    
+    % --- Velocity Projections and 3D Plot ---
+    figure('Name','YA Velocity Projections + 3D','Color','w','Units','normalized','Position',[.1 .1 .8 .6]);
+    
+    % Ṫ–Ṙ Plane (Top Left)
+    subplot(2,2,1);
+    plot(y_dot, x_dot, 'LineWidth', 1.2);
+    xlabel('Ṫ (m/s)', 'Interpreter', 'latex');
+    ylabel('Ṙ (m/s)', 'Interpreter', 'latex');
+    axis equal; grid on;
+    
+    % Ṅ–Ṙ Plane (Top Right)
+    subplot(2,2,2);
+    plot(z_dot, x_dot, 'LineWidth', 1.2);
+    xlabel('Ṅ (m/s)', 'Interpreter', 'latex');
+    ylabel('Ṙ (m/s)', 'Interpreter', 'latex');
+    axis equal; grid on;
+    
+    % Ṫ–Ṅ Plane (Bottom Left)
+    subplot(2,2,3);
+    plot(y_dot, z_dot, 'LineWidth', 1.2);
+    xlabel('Ṫ (m/s)', 'Interpreter', 'latex');
+    ylabel('Ṅ (m/s)', 'Interpreter', 'latex');
+    axis equal; grid on;
+    
+    % 3D Relative Velocity Plot (Bottom Right)
+    subplot(2,2,4);
+    plot3(x_dot, y_dot, z_dot, 'LineWidth', 1.2);
+    xlabel('Ṙ (m/s)', 'Interpreter', 'latex');
+    ylabel('Ṫ (m/s)', 'Interpreter', 'latex');
+    zlabel('Ṅ (m/s)', 'Interpreter', 'latex');
+    axis equal; grid on;
+
+    
+
+    % --- Position and Velocity vs Time (RTN Components) ---
+    figure('Name','YA RTN Position and Velocity vs Time','Color','w','Units','normalized','Position',[.1 .1 .8 .6]);
+    
+    % Position R (x) vs Time
+    subplot(3,2,1);
+    plot(t_vec, x, 'b', 'LineWidth', 1.2);
+    xlabel('Time [s]'); ylabel('R (m)');
+    title('R Component Position'); grid on;
+    
+    % Position T (y) vs Time
+    subplot(3,2,3);
+    plot(t_vec, y, 'r', 'LineWidth', 1.2);
+    xlabel('Time [s]'); ylabel('T (m)');
+    title('T Component Position'); grid on;
+    
+    % Position N (z) vs Time
+    subplot(3,2,5);
+    plot(t_vec, z, 'g', 'LineWidth', 1.2);
+    xlabel('Time [s]'); ylabel('N (m)');
+    title('N Component Position'); grid on;
+    
+    % Velocity Ṙ (ẋ) vs Time
+    subplot(3,2,2);
+    plot(t_vec, x_dot, 'b', 'LineWidth', 1.2);
+    xlabel('Time [s]'); ylabel('Ṙ (m/s)');
+    title('R Component Velocity'); grid on;
+    
+    % Velocity Ṫ (ẏ) vs Time
+    subplot(3,2,4);
+    plot(t_vec, y_dot, 'r', 'LineWidth', 1.2);
+    xlabel('Time [s]'); ylabel('Ṫ (m/s)');
+    title('T Component Velocity'); grid on;
+    
+    % Velocity Ṅ (ż) vs Time
+    subplot(3,2,6);
+    plot(t_vec, z_dot, 'g', 'LineWidth', 1.2);
+    xlabel('Time [s]'); ylabel('Ṅ (m/s)');
+    title('N Component Velocity'); grid on;
+    
+    % Return computed vectors
+    t_vec = (f_vec - f_vec(1)) / n;  % Already computed in your function
+end
+
+
+
+
+num_orbits = 15;  % number of orbits to propagate
+
+% Call the propagation function with the computed constants
+[t_vec_YA, x_YA, y_YA, z_YA, xdot_YA, ydot_YA, zdot_YA] = propagateYA(a_0, e_0, f_0, CYA, num_orbits);
+
+
+%% 1 - e
+
+function qns_roe = get_qns_roe(oe_chief, oe_deputy)
+    % Chief orbital elements: [a_0, e_0, i_0, W_0, w_0, f_0]
+    % Deputy orbital elements: [a_1, e_1, i_1, W_1, w_1, f_1]
+
+    % Extract chief elements
+    a_0 = oe_chief(1);
+    e_0 = oe_chief(2);
+    i_0 = oe_chief(3);
+    W_0 = oe_chief(4);
+    w_0 = oe_chief(5);
+    f_0 = oe_chief(6);
+
+    % Extract deputy elements
+    a_1 = oe_deputy(1);
+    e_1 = oe_deputy(2);
+    i_1 = oe_deputy(3);
+    W_1 = oe_deputy(4);
+    w_1 = oe_deputy(5);
+    f_1 = oe_deputy(6);
+
+    % True anomaly → Eccentric anomaly
+    E_0 = 2 * atan( sqrt((1 - e_0)/(1 + e_0)) * tan(f_0 / 2) );
+    E_1 = 2 * atan( sqrt((1 - e_1)/(1 + e_1)) * tan(f_1 / 2) );
+
+    % Eccentric anomaly → Mean anomaly
+    M_0 = E_0 - e_0 * sin(E_0);
+    M_1 = E_1 - e_1 * sin(E_1);
+
+    % Compute QNS-ROE
+    delta_a  = (a_1 - a_0) / a_0;
+    delta_lambda = (M_1 + w_1) - (M_0 + w_0) + (W_1 - W_0) * cos(i_0);
+    delta_ex = e_1 * cos(w_1) - e_0 * cos(w_0);
+    delta_ey = e_1 * sin(w_1) - e_0 * sin(w_0);
+    delta_ix = i_1 - i_0;
+    delta_iy = (W_1 - W_0) * sin(i_0);
+
+    qns_roe = [delta_a, delta_lambda, delta_ex, delta_ey, delta_ix, delta_iy];
+end
+
+
+qns_roe = get_qns_roe(initial_state_0_OE,initial_state_1_OE);
+
+fprintf('\nQNS-ROE Computed from True Anomaly:\n');
+fprintf('  δa/a   = %+8.6e\n', qns_roe(1));
+fprintf('  δλ     = %+8.6e rad\n', qns_roe(2));
+fprintf('  δε_x   = %+8.6e\n', qns_roe(3));
+fprintf('  δε_y   = %+8.6e\n', qns_roe(4));
+fprintf('  δi_x   = %+8.6e rad\n', qns_roe(5));
+fprintf('  δi_y   = %+8.6e rad\n', qns_roe(6));
+fprintf('\n');
+
+%% 1 - f
+
+
+function [t_vec, x, y, z, xdot, ydot, zdot] = propagateLinearMapping(oe_chief, qns_roe, num_orbits, num_points)
+    % Chief orbital elements: [a, e, i, Omega, w, f]
+    a = oe_chief(1);
+    e = oe_chief(2);
+    i = oe_chief(3);
+    w = oe_chief(5);
+    f0 = oe_chief(6);
+
+    mu = 3.986004418e14;                % Earth gravitational parameter [m^3/s^2]
+    eta = sqrt(1 - e^2);                % eta
+    n = sqrt(mu / a^3);                 % mean motion
+
+    % Time and anomaly vectors
+    f_vec = linspace(f0, f0 + num_orbits * 2 * pi, num_points);
+    u_vec = w + f_vec;                  % argument of latitude
+    t_vec = (f_vec - f0) ./ n;          % approximate time vector
+
+    ex = e * cos(w);                    % e_x component
+    ey = e * sin(w);                    % e_y component
+
+    % Scaling matrix
+    S = blkdiag(a * eta^2 * eye(3), (a * n / eta) * eye(3));
+
+    % Storage for states
+    state = zeros(6, num_points);
+
+    for idx = 1:num_points
+        k = 1 + e * cos(f_vec(idx));
+        kp = -e * sin(f_vec(idx));
+        u = u_vec(idx);
+        t = t_vec(idx);
+
+        % Compute B matrix entries (x component shown as example)
+        bx1 = 1 / k + (3 / 2) * kp * n / eta^3 * t;
+        bx2 = -kp / eta^3;
+        bx3 = (1 / eta^3) * (ex * (k - 1) / (1 + eta) - cos(u));
+        bx4 = (1 / eta^3) * (ey * (k - 1) / (1 + eta) - sin(u));
+        bx6 = kp / eta^3 * cot(i);
+
+        by1 = -(3 / 2) * k * n / eta^3 * t;
+        by2 = k / eta^3;
+        by3 = (1 / eta^2) * ((1 + 1 / k) * sin(u) + ey / k + k / eta * (ey / (1 + eta)));
+        by4 = -(1 / eta^2) * ((1 + 1 / k) * cos(u) + ex / k + k / eta * (ex / (1 + eta)));
+        by6 = (1 / k - k / eta^3) * cot(i);
+
+        bz5 = (1 / k) * sin(u);
+        bz6 = -(1 / k) * cos(u);
+
+        % Velocities
+        bxd1 = kp / 2 + (3 / 2) * k^2 * (1 - k) * n / eta^3 * t;
+        bxd2 = k^2 / eta^3 * (k - 1);
+        bxd3 = k^2 / eta^3 * (eta * sin(u) + ey * (k - 1) / (1 + eta));
+        bxd4 = -k^2 / eta^3 * (eta * cos(u) + ex * (k - 1) / (1 + eta));
+        bxd6 = -k^2 / eta^3 * (k - 1) * cot(i);
+
+        byd1 = -(3 / 2) * k * (1 + k * kp * n / eta^3 * t);
+        byd2 = k^2 / eta^3 * kp;
+        byd3 = (1 + k^2 / eta^3) * cos(u) + ex / eta^2 * k  * (1 + k / eta * (1 - k) / (1 + eta));
+        byd4 = (1 + k^2 / eta^3) * sin(u) + ey / eta^2 * k  * (1 + k / eta * (1 - k) / (1 + eta));
+        byd6 = -(1 + k^2 / eta^3) * kp * cot(i);
+
+        bzd5 = cos(u)+ex;
+        bzd6 = sin(u)+ey;
+
+        % Assemble B matrix
+        B = [bx1, bx2, bx3, bx4, 0, bx6;
+             by1, by2, by3, by4, 0, by6;
+             0,    0,    0,    0, bz5, bz6;
+             bxd1, bxd2, bxd3, bxd4, 0, bxd6;
+             byd1, byd2, byd3, byd4, 0, byd6;
+             0,    0,    0,    0, bzd5, bzd6];
+
+        state(:, idx) = S * B * qns_roe.';
+    end
+
+    % Extract and plot
+    x = state(1, :);
+    y = state(2, :);
+    z = state(3, :);
+    xdot = state(4, :);
+    ydot = state(5, :);
+    zdot = state(6, :);
+
+    figure;
+    plot3(x, y, z, 'b', 'LineWidth', 1.5);
+    xlabel('R [m]'); ylabel('T [m]'); zlabel('N [m]');
+    title('Relative Trajectory (3D View)'); grid on; axis equal;
+
+    figure;
+    subplot(1,3,1); plot(x, y, 'b'); xlabel('R'); ylabel('T'); title('RT Plane'); grid on; axis equal;
+    subplot(1,3,2); plot(y, z, 'r'); xlabel('T'); ylabel('N'); title('TN Plane'); grid on; axis equal;
+    subplot(1,3,3); plot(z, x, 'g'); xlabel('N'); ylabel('R'); title('NR Plane'); grid on; axis equal;
+
+    figure;
+    subplot(3,2,1); plot(t_vec, x, 'b'); xlabel('Time [s]'); ylabel('x [m]'); title('R Position'); grid on;
+    subplot(3,2,3); plot(t_vec, y, 'r'); xlabel('Time [s]'); ylabel('y [m]'); title('T Position'); grid on;
+    subplot(3,2,5); plot(t_vec, z, 'g'); xlabel('Time [s]'); ylabel('z [m]'); title('N Position'); grid on;
+    subplot(3,2,2); plot(t_vec, xdot, 'b'); xlabel('Time [s]'); ylabel('xdot [m/s]'); title('R Velocity'); grid on;
+    subplot(3,2,4); plot(t_vec, ydot, 'r'); xlabel('Time [s]'); ylabel('ydot [m/s]'); title('T Velocity'); grid on;
+    subplot(3,2,6); plot(t_vec, zdot, 'g'); xlabel('Time [s]'); ylabel('zdot [m/s]'); title('N Velocity'); grid on;
+
+    t_vec = t_vec;       % Already defined inside the function
+    x = state(1, :);
+    y = state(2, :);
+    z = state(3, :);
+    xdot = state(4, :);
+    ydot = state(5, :);
+    zdot = state(6, :);
+
+end
+
+[t_vec_LM, x_LM, y_LM, z_LM, xdot_LM, ydot_LM, zdot_LM] = propagateLinearMapping(initial_state_0_OE, qns_roe, 15, 20000);
+
+%%
+
+
+% -----------------------------
+% Assume YA results: x_YA, y_YA, z_YA, xdot_YA, ydot_YA, zdot_YA, t_vec_YA
+% Assume Linear Mapping results: x_LM, y_LM, z_LM, xdot_LM, ydot_LM, zdot_LM, t_vec_LM
+% -----------------------------
+
+% REPLACE with your actual variable names from YA and Linear Mapping
+% Example placeholders (edit if needed):
+% t_vec_YA = ... ; % Already computed in YA propagation
+% x_YA = ...; y_YA = ...; z_YA = ...; 
+% xdot_YA = ...; ydot_YA = ...; zdot_YA = ...;
+% t_vec_LM = t_vec;  % Time vector from linear mapping
+% x_LM = x; y_LM = y; z_LM = z;
+% xdot_LM = xdot; ydot_LM = ydot; zdot_LM = zdot;
+
+labels = {'R', 'T', 'N'};
+
+% --- Position and Velocity vs Time (YA vs Linear Mapping Superimposed) ---
+figure('Name', 'YA vs Linear Mapping: RTN Position and Velocity', 'Color', 'w', 'Units', 'normalized', 'Position', [.1 .1 .8 .6]);
+
+% Positions
+subplot(3,2,1); 
+plot(t_vec_YA, x_YA, 'b-', 'LineWidth', 1.2); hold on;
+plot(t_vec_LM, x_LM, 'b--', 'LineWidth', 1.2);
+xlabel('Time [s]'); ylabel('R (m)'); title('R Component Position'); grid on;
+legend('YA', 'Linear Mapping');
+
+subplot(3,2,3); 
+plot(t_vec_YA, y_YA, 'r-', 'LineWidth', 1.2); hold on;
+plot(t_vec_LM, y_LM, 'r--', 'LineWidth', 1.2);
+xlabel('Time [s]'); ylabel('T (m)'); title('T Component Position'); grid on;
+legend('YA', 'Linear Mapping');
+
+subplot(3,2,5); 
+plot(t_vec_YA, z_YA, 'g-', 'LineWidth', 1.2); hold on;
+plot(t_vec_LM, z_LM, 'g--', 'LineWidth', 1.2);
+xlabel('Time [s]'); ylabel('N (m)'); title('N Component Position'); grid on;
+legend('YA', 'Linear Mapping');
+
+% Velocities
+subplot(3,2,2); 
+plot(t_vec_YA, xdot_YA, 'b-', 'LineWidth', 1.2); hold on;
+plot(t_vec_LM, xdot_LM, 'b--', 'LineWidth', 1.2);
+xlabel('Time [s]'); ylabel('Ṙ (m/s)'); title('R Component Velocity'); grid on;
+legend('YA', 'Linear Mapping');
+
+subplot(3,2,4); 
+plot(t_vec_YA, ydot_YA, 'r-', 'LineWidth', 1.2); hold on;
+plot(t_vec_LM, ydot_LM, 'r--', 'LineWidth', 1.2);
+xlabel('Time [s]'); ylabel('Ṫ (m/s)'); title('T Component Velocity'); grid on;
+legend('YA', 'Linear Mapping');
+
+subplot(3,2,6); 
+plot(t_vec_YA, zdot_YA, 'g-', 'LineWidth', 1.2); hold on;
+plot(t_vec_LM, zdot_LM, 'g--', 'LineWidth', 1.2);
+xlabel('Time [s]'); ylabel('Ṅ (m/s)'); title('N Component Velocity'); grid on;
+legend('YA', 'Linear Mapping');
+
+
+%%
+
+
+% =====================================================
+% Comparison Plots: YA vs Linear Mapping (Position Projections + 3D)
+% =====================================================
+
+figure('Name','YA vs Linear Mapping: Position Projections + 3D','Color','w','Units','normalized','Position',[.1 .1 .8 .6]);
+
+% --- RT Plane ---
+subplot(2,2,1);
+plot(y_YA, x_YA, 'b-', 'LineWidth', 1.5); hold on;
+plot(y_LM, x_LM, 'r--', 'LineWidth', 1.5);
+xlabel('T (m)'); ylabel('R (m)');
+%title('RT Plane');
+legend('YA', 'Linear Mapping');
+axis equal; grid on;
+
+% --- NR Plane ---
+subplot(2,2,2);
+plot(z_YA, x_YA, 'b-', 'LineWidth', 1.5); hold on;
+plot(z_LM, x_LM, 'r--', 'LineWidth', 1.5);
+xlabel('N (m)'); ylabel('R (m)');
+%title('NR Plane');
+legend('YA', 'Linear Mapping');
+axis equal; grid on;
+
+% --- TN Plane ---
+subplot(2,2,3);
+plot(y_YA, z_YA, 'b-', 'LineWidth', 1.5); hold on;
+plot(y_LM, z_LM, 'r--', 'LineWidth', 1.5);
+xlabel('T (m)'); ylabel('N (m)');
+%title('TN Plane');
+legend('YA', 'Linear Mapping');
+axis equal; grid on;
+
+% --- 3D Trajectory ---
+subplot(2,2,4);
+plot3(x_YA, y_YA, z_YA, 'b-', 'LineWidth', 1.5); hold on;
+plot3(x_LM, y_LM, z_LM, 'r--', 'LineWidth', 1.5);
+xlabel('R (m)'); ylabel('T (m)'); zlabel('N (m)');
+%title('3D RTN Trajectory');
+legend('YA', 'Linear Mapping');
+axis equal; grid on;
+
+%%
+% =====================================================
+% Comparison Plots: YA vs Linear Mapping (Velocity Projections + 3D)
+% =====================================================
+
+figure('Name','YA vs Linear Mapping: Velocity Projections + 3D','Color','w','Units','normalized','Position',[.1 .1 .8 .6]);
+
+% --- Ṫ–Ṙ Plane ---
+subplot(2,2,1);
+plot(ydot_YA, xdot_YA, 'b-', 'LineWidth', 1.5); hold on;
+plot(ydot_LM, xdot_LM, 'r--', 'LineWidth', 1.5);
+xlabel('$\dot{T}$ (m/s)', 'Interpreter', 'latex');
+ylabel('$\dot{R}$ (m/s)', 'Interpreter', 'latex');
+%title('Ṫ–Ṙ Plane');
+legend('YA', 'Linear Mapping');
+axis equal; grid on;
+
+% --- Ṅ–Ṙ Plane ---
+subplot(2,2,2);
+plot(zdot_YA, xdot_YA, 'b-', 'LineWidth', 1.5); hold on;
+plot(zdot_LM, xdot_LM, 'r--', 'LineWidth', 1.5);
+xlabel('$\dot{N}$ (m/s)', 'Interpreter', 'latex');
+ylabel('$\dot{R}$ (m/s)', 'Interpreter', 'latex');
+%title('Ṅ–Ṙ Plane');
+legend('YA', 'Linear Mapping');
+axis equal; grid on;
+
+% --- Ṫ–Ṅ Plane ---
+subplot(2,2,3);
+plot(ydot_YA, zdot_YA, 'b-', 'LineWidth', 1.5); hold on;
+plot(ydot_LM, zdot_LM, 'r--', 'LineWidth', 1.5);
+xlabel('$\dot{T}$ (m/s)', 'Interpreter', 'latex');
+ylabel('$\dot{N}$ (m/s)', 'Interpreter', 'latex');
+%title('Ṫ–Ṅ Plane');
+legend('YA', 'Linear Mapping');
+axis equal; grid on;
+
+% --- 3D Velocity Trajectory ---
+subplot(2,2,4);
+plot3(xdot_YA, ydot_YA, zdot_YA, 'b-', 'LineWidth', 1.5); hold on;
+plot3(xdot_LM, ydot_LM, zdot_LM, 'r--', 'LineWidth', 1.5);
+xlabel('$\dot{R}$ (m/s)', 'Interpreter', 'latex');
+ylabel('$\dot{T}$ (m/s)', 'Interpreter', 'latex');
+zlabel('$\dot{N}$ (m/s)', 'Interpreter', 'latex');
+%title('3D RTN Velocity Trajectory');
+legend('YA', 'Linear Mapping');
+axis equal; grid on;
+
+%%
+
+
+function vec_RTN = ECI2RTN(vec_ECI, r_sat_ECI, v_sat_ECI)
+    % Compute the radial unit vector (R-hat)
+    r_hat = r_sat_ECI / norm(r_sat_ECI);
+
+    % Compute the angular momentum vector and then the normal unit vector (N-hat)
+    h_vec = cross(r_sat_ECI, v_sat_ECI);
+    n_hat = h_vec / norm(h_vec);
+
+    % Compute the transverse unit vector (T-hat) via the cross product of N-hat and R-hat
+    t_hat = cross(n_hat, r_hat);
+
+    % Form the transformation (rotation) matrix from ECI to RTN
+    R_ECI2RTN = [r_hat.'; t_hat.'; n_hat.'];
+
+    % Transform the input ECI vector to the RTN frame.
+    vec_RTN = R_ECI2RTN * vec_ECI;
+end
+
+
+function statedot = getStatedot(t, state, const, body)
+    mu = const.(body).mu;
+    statedot = zeros(12, 1);
+
+    % Chief in ECI 
+    r0 = state(1:3);       
+    v0 = state(4:6);       
+    r0_norm = norm(r0);
+
+    % Deputy relative to chief in chief's RTN ===
+    rho = state(7:9);      
+    drho = state(10:12);   
+
+    x = rho(1); y = rho(2); z = rho(3);
+    dx = drho(1); dy = drho(2); dz = drho(3);
+
+    % Chief motion
+    a0 = -mu / r0_norm^3 * r0;
+    statedot(1:3) = v0;
+    statedot(4:6) = a0;
+
+    % RTN frame angular rates 
+    h_vec = cross(r0, v0);
+    h = norm(h_vec);
+    theta_dot = h / r0_norm^2;
+    r0_dot = dot(r0, v0) / r0_norm;
+    theta_ddot = -2 * r0_dot * theta_dot / r0_norm;
+
+    % Relative acceleration in rotating RTN frame 
+
+    denom = ((r0_norm + x)^2 + y^2 + z^2)^(3/2);
+
+    ax = 2*theta_dot*dy + theta_ddot*y + theta_dot^2*x - mu * ((r0_norm + x)/denom - 1/r0_norm^2);
+    ay =  -2*theta_dot*dx - theta_ddot*x+ theta_dot^2*y - mu*y/denom;
+    az = -mu*z/denom;
+
+    % Relative motion 
+    statedot(7:9) = drho;
+    statedot(10:12) = [ax; ay; az];
+end
+
+r0 = initial_state_0_ECI(1:3);
+v0 = initial_state_0_ECI(4:6);
+
+r1 = initial_state_1_ECI(1:3);
+v1 = initial_state_1_ECI(4:6);
+
+rho0_ECI  = r1 - r0;
+drho0_ECI = v1 - v0;
+
+r_norm = norm(r0);
+r_hat   = r0 / r_norm;
+h_vec   = cross(r0, v0);
+n_hat   = h_vec / norm(h_vec);
+t_hat   = cross(n_hat, r_hat);
+R2RTN   = [r_hat.'; t_hat.'; n_hat.'];   % ECI→RTN
+
+rho0_RTN = R2RTN * rho0_ECI;
+
+omega0   = [0; 0; norm(h_vec)/r_norm^2];
+
+v_RTN_uncorrected = R2RTN * drho0_ECI;
+drho0_RTN         = v_RTN_uncorrected - cross(omega0, rho0_RTN);
+
+%drho0_RTN = R2RTN * (drho0_ECI- cross(omega0, rho0_RTN));
+
+initial_state = [ r0; v0; rho0_RTN; drho0_RTN ];
+
+
+% Orbital period
+mu = const.(body).mu;
+T = 2 * pi * sqrt(a_0^3 / mu); % Orbital period [s]
+
+% Simulation parameters
+tstart = 0;
+tint = 10;
+tend = 15*T;
+options = odeset('RelTol', 1e-12, 'AbsTol', 1e-12);
+
+% Run the propagator
+odefun = @(t, state) getStatedot(t,state,const,body);                               
+[t, state_out] = ode113(odefun, (tstart:tint:tend)', initial_state, options);
+
+% Extract relative position and velocity of deputy
+relative_pos_RTN = state_out(:, 7:9).';   
+relative_vel_RTN = state_out(:,10:12).'; 
+
+%%
+
+% Extract true position and velocity (already done)
+pos_true_RTN = relative_pos_RTN;        % 3xN
+vel_true_RTN = relative_vel_RTN;        % 3xN
+t_true = t';                           % Time vector from ODE solver
+
+
+% Interpolation for YA
+x_YA_interp = interp1(t_vec_YA, x_YA, t_true);
+y_YA_interp = interp1(t_vec_YA, y_YA, t_true);
+z_YA_interp = interp1(t_vec_YA, z_YA, t_true);
+xdot_YA_interp = interp1(t_vec_YA, xdot_YA, t_true);
+ydot_YA_interp = interp1(t_vec_YA, ydot_YA, t_true);
+zdot_YA_interp = interp1(t_vec_YA, zdot_YA, t_true);
+
+% Interpolation for Linear Mapping
+x_LM_interp = interp1(t_vec_LM, x_LM, t_true);
+y_LM_interp = interp1(t_vec_LM, y_LM, t_true);
+z_LM_interp = interp1(t_vec_LM, z_LM, t_true);
+xdot_LM_interp = interp1(t_vec_LM, xdot_LM, t_true);
+ydot_LM_interp = interp1(t_vec_LM, ydot_LM, t_true);
+zdot_LM_interp = interp1(t_vec_LM, zdot_LM, t_true);
+
+
+% Position Errors (YA and LM vs Nonlinear)
+error_pos_YA = sqrt((x_YA_interp - pos_true_RTN(1,:)).^2 + ...
+                    (y_YA_interp - pos_true_RTN(2,:)).^2 + ...
+                    (z_YA_interp - pos_true_RTN(3,:)).^2);
+
+error_pos_LM = sqrt((x_LM_interp - pos_true_RTN(1,:)).^2 + ...
+                    (y_LM_interp - pos_true_RTN(2,:)).^2 + ...
+                    (z_LM_interp - pos_true_RTN(3,:)).^2);
+
+% Velocity Errors (YA and LM vs Nonlinear)
+error_vel_YA = sqrt((xdot_YA_interp - vel_true_RTN(1,:)).^2 + ...
+                    (ydot_YA_interp - vel_true_RTN(2,:)).^2 + ...
+                    (zdot_YA_interp - vel_true_RTN(3,:)).^2);
+
+error_vel_LM = sqrt((xdot_LM_interp - vel_true_RTN(1,:)).^2 + ...
+                    (ydot_LM_interp - vel_true_RTN(2,:)).^2 + ...
+                    (zdot_LM_interp - vel_true_RTN(3,:)).^2);
+
+figure('Name','YA vs LM: Position Error vs Nonlinear','Color','w');
+plot(t_true, error_pos_YA, 'b-', 'LineWidth', 1.5); hold on;
+plot(t_true, error_pos_LM, 'r--', 'LineWidth', 1.5);
+xlabel('Time [s]'); ylabel('Position Error [m]');
+legend('YA Error', 'Linear Mapping Error');
+%title('Relative Position Error w.r.t. Nonlinear Solution'); grid on;
+
+figure('Name','YA vs LM: Velocity Error vs Nonlinear','Color','w');
+plot(t_true, error_vel_YA, 'b-', 'LineWidth', 1.5); hold on;
+plot(t_true, error_vel_LM, 'r--', 'LineWidth', 1.5);
+xlabel('Time [s]'); ylabel('Velocity Error [m/s]');
+legend('YA Error', 'Linear Mapping Error');
+%title('Relative Velocity Error w.r.t. Nonlinear Solution'); grid on;
