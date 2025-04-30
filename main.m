@@ -600,4 +600,3 @@ plot(t/3600, rad2deg(M_FODE_unwrapped), 'b', t/3600, rad2deg(M_mean), 'r--');
 xlabel('Time [h]'); ylabel('Mean anomaly [deg]'); grid on;
 
 sgtitle('Comparison FODE vs Mean OE (J2) propagators');
-

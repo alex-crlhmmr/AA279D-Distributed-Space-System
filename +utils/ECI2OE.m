@@ -1,7 +1,11 @@
-function [a, e, i, W, w, f] = ECI2OE(r_ECI, v_ECI, const, body)
+function state_OE = ECI2OE(state_ECI, const, body)
     % Gravitational parameter
     mu = const.(body).mu;
-
+    
+    % Extrtact position and velocity
+    r_ECI = state_ECI(1:3);
+    v_ECI = state_ECI(4:6);
+    
     % Specific angular momentum
     h_vec = cross(r_ECI, v_ECI);
     h = norm(h_vec);
@@ -39,4 +43,5 @@ function [a, e, i, W, w, f] = ECI2OE(r_ECI, v_ECI, const, body)
 
     % Semi-major axis (a)
     a = 1 / (2 / norm(r_ECI) - norm(v_ECI)^2 / mu);
+    state_OE = [a, e, i, W, w, f];
 end

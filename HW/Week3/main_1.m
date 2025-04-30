@@ -138,7 +138,7 @@ n = sqrt(mu/r0^3);
 c1 = - (3*x0 + 2*ydot0/n);
 c2 = xdot0/n;
 c3 = 4*x0 + 2*ydot0/n;
-%c3 = 0;
+c3 = 0;
 c4 = y0 - 2*xdot0/n;
 c5 = z0;
 c6 = zdot0/n;
@@ -221,35 +221,31 @@ figure('Name','HCW Velocity Projections + 3D','Color','w','Units','normalized','
 
 % Ṫ–Ṙ Plane 
 subplot(2,2,1);
-plot(yd, xd, 'LineWidth',1.2); ̇
+plot(yd, xd, 'LineWidth',1.2);
 xlabel('Ṫ (m/s)', 'Interpreter', 'latex');
 ylabel('Ṙ (m/s)', 'Interpreter', 'latex');
-%title('Ṫ–Ṙ Plane', 'Interpreter', 'latex');
 axis equal; grid on;
 
 % Ṅ–Ṙ Plane 
 subplot(2,2,2);
-plot(zd, xd, 'LineWidth',1.2);̇
+plot(zd, xd, 'LineWidth',1.2);
 xlabel('Ṅ (m/s)', 'Interpreter', 'latex');
 ylabel('Ṙ (m/s)', 'Interpreter', 'latex');
-%title('Ṅ–Ṙ Plane', 'Interpreter', 'latex');
 axis equal; grid on;
 
 % Ṫ–Ṅ Plane 
 subplot(2,2,3);
-plot(yd, zd, 'LineWidth',1.2);  ̇
+plot(yd, zd, 'LineWidth',1.2);
 xlabel('Ṫ (m/s)', 'Interpreter', 'latex');
 ylabel('Ṅ (m/s)', 'Interpreter', 'latex');
-%title('Ṫ–Ṅ Plane', 'Interpreter', 'latex');
 axis equal; grid on;
 
-% 3D Relative Velocity Plot *
+% 3D Relative Velocity Plot
 subplot(2,2,4);
 plot3(xd, yd, zd, 'LineWidth',1.2);
 xlabel('Ṙ (m/s)', 'Interpreter', 'latex');
 ylabel('Ṫ (m/s)', 'Interpreter', 'latex');
 zlabel('Ṅ (m/s)', 'Interpreter', 'latex');
-%title('3D Relative Velocity', 'Interpreter', 'latex');
 axis equal; grid on;
 
 
