@@ -29,7 +29,7 @@ tspan = t0:0.5:t_end;
 options = odeset('RelTol', 1e-12, 'AbsTol', 1e-12);
 
 % PROPOGATE
-[t, state] = ode113(@state_dot, tspan, state0, options);
+[t, state] = ode113(@nonlinear_state_dot, tspan, state0, options);
 
 % PLOT
 x1 = state(:, 7);
@@ -88,7 +88,7 @@ phi_inv = (1/eta^2) * [
 Constants = phi_inv * xbar0;
 
 % Propogate
-step_size = (15*2*pi) / (length(tspan)-1)
+step_size = (15*2*pi) / (length(tspan)-1);
 f_change = 15*2*pi;
 [f_vals, states] = get_YA_states(alpha0, Constants, step_size, f_change, n, mu, h);
 

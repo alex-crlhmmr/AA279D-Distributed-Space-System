@@ -1,7 +1,4 @@
-function [a, e, i, W, w, f] = ECI2OE(r_ECI, v_ECI, const, body)
-    % Gravitational parameter
-    mu = const.(body).mu;
-
+function [a, e, i, W, w, f] = ECI2OE(r_ECI, v_ECI, mu)
     % Specific angular momentum
     h_vec = cross(r_ECI, v_ECI);
     h = norm(h_vec);
